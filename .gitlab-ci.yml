@@ -1,0 +1,47 @@
+stages:
+  - build
+  - deploy
+  - test
+
+variables:
+  DOCKER_IMAGE: $CI_REGISTRY_IMAGE:$CI_COMMIT
+
+# Docker-in-Docker сервис для сборки Docker образов
+services:
+  - docker:dind
+
+# Этап сборки Docker образа
+build:
+  stage: build
+  script:
+    - docker login -u "$CI_REGISTRY_USER" -p "$CI_REGISTRY_PASSWORD" $CI_REGISTRY
+    - docker build -t $DOCKER_IMAGE .
+    - docker push $DOCKER_IMAGE
+  only:
+    - develop
+
+# Этап развертывания на тестовое окружение
+deploy:
+  stage: deploy
+  script:
+    - docker pull $DOCKER_IMAGE
+    - docker stop test_container || true
+    - docker rm test_container || true
+    - docker run -d --name test_container -p 8080:80 $DOCKER_IMAGE
+  only:
+    - develop
+
+# Этап тестирования развернутого приложения
+test:
+  stage: test
+  script:
+    - apt-get update && apt-get install -y curl
+    - >
+      if curl -s http://localhost:8080 | grep -q "Congratulations!"; then
+        echo "Приложение запущено"
+      else
+        echo "Ошибка в запуске приложения"
+        exit 1
+      fi
+  only:
+    - develop
